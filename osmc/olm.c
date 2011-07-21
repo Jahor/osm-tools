@@ -99,7 +99,7 @@ static char deleteFromDbById(sqlite3* db, sqlite3_stmt* deleteStatement, OsmId i
     sqlite3_bind_int(deleteStatement, 1, id);
     if(sqlite3_step(deleteStatement) == SQLITE_ERROR) {
         sqlite3_reset(deleteStatement);
-        fprintf(stderr, "Could not delete object id %li: %s", id, sqlite3_errmsg(db));
+        fprintf(stderr, "Could not delete object id %li: %s", (long)id, sqlite3_errmsg(db));
         return 0;
     }
     sqlite3_reset(deleteStatement);

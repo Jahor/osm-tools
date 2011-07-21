@@ -5,8 +5,8 @@ LIB_SRCS_DIST = 2DTree.c MapperArea.c MapperTypes.c mapper.c omm.c osm.c 4DTree.
 SRCS = $(LIB_SRCS) osmc.c
 HEADERS = $(LIB_SRCS, .c=.h)
 
-CFLAGS = `xml2-config --cflags` -I/usr/include/mysql -I/usr/include/ -I /usr/include/libxml2/ -I /usr/local/include -I/home/jagor/include -I ./ -I
-LDFLAGS = `xml2-config --libs` -L/usr/lib -L/usr/local/lib -L/home/jagor/lib -largtable2 -lcurl -lsqlite3 -lmysqlclient
+CFLAGS = `xml2-config --cflags` -I/usr/include/mysql -I/usr/local/mysql/include/ -I/usr/include/ -I/usr/local/include -I./
+LDFLAGS = `xml2-config --libs` -L/usr/lib -L/usr/local/lib -L/usr/local/mysql/lib/ -largtable2 -lcurl -lsqlite3 -lmysqlclient
 
 osmc: $(SRCS) $(HEADERS)
 		$(CC) $(CFLAGS) $(LDFLAGS) -std=c99 -o osmc $(SRCS)

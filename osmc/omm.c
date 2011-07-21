@@ -173,7 +173,7 @@ static void rollbackTransaction(MYSQL* db) {
 
 static char deleteFromDbById(MYSQL* db, mysql_stmt* deleteStatement, OsmId id) {
     if(mysql_exec(deleteStatement, id)) {
-        fprintf(stderr, "Could not delete object id %li: %s\n", id, mysql_error(db));
+        fprintf(stderr, "Could not delete object id %li: %s\n", (long) id, mysql_error(db));
         return 0;
     }
     return 1;
