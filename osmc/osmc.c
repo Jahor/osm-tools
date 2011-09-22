@@ -23,7 +23,7 @@
 #include <time.h>
 #include <stdarg.h>
 
-static int convertOsm2Obm(const char* inputFile, const char* outputDirectory, const char* polygonsDirectory) {
+static int convertOsm2Obm(const char* inputFile, const char* outputDirectory, const char* polygonsDirectory, char compress) {
  	//printf("Reading polygons...");
     osm2obm converter;
     
@@ -32,7 +32,7 @@ static int convertOsm2Obm(const char* inputFile, const char* outputDirectory, co
     CountryPolygon* polygons = readPolygons(polygonsDirectory, &count, "FULL");
     //	printf("Done\n");    
     //	printf("Initialize converter...\n");
-    initOsm2obmWithOutputDirectory(&converter, outputDirectory, polygons, count);
+    initOsm2obmWithOutputDirectory(&converter, outputDirectory, polygons, count, compress);
     //	printf("Done.\n");
     if(!inputFile) {
         //		printf("Converting from stdin...\n");
@@ -307,7 +307,7 @@ static int convertOsd2Omm(const char*  host, const char* user, const char* passw
 #define SECONDS_IN_MINUTE (60)
 
 #define MINUTE_SLOWNESS (5)
-#define HOUR_SLOWNESS (2)
+#define HOUR_SLOWNESS (1)
 #define DAY_SLOWNESS (1)
 
 #define DIFF_TYPES_COUNT 3
@@ -384,19 +384,19 @@ static int updateLFromWebMysql(const char*  host, const char* user, const char* 
     
     int iterations[DIFF_TYPES_COUNT] = {0,0,0};
     
-    if (differenceMinutes/DAY > DAY_SLOWNESS) {
+    if (differenceMinutes/DAY >= DAY_SLOWNESS) {
         periods[0] = "daily";
         iterations[0] = differenceMinutes / DAY - DAY_SLOWNESS;
         differenceMinutes -= iterations[0] * DAY;
     }
     
-    if (differenceMinutes/HOUR > HOUR_SLOWNESS) {
+    if (differenceMinutes/HOUR >= HOUR_SLOWNESS) {
         periods[1] = "hourly";
         iterations[1] = differenceMinutes / HOUR - HOUR_SLOWNESS;
         differenceMinutes -= iterations[1] * HOUR;
     } 
     
-    if (differenceMinutes/MINUTE > MINUTE_SLOWNESS) {
+    if (differenceMinutes/MINUTE >= MINUTE_SLOWNESS) {
         periods[2] = "minute";
         iterations[2] = differenceMinutes / MINUTE - MINUTE_SLOWNESS;
         differenceMinutes -= iterations[2] * MINUTE;
@@ -572,9 +572,12 @@ static int convertOsd2Omm(const char*  host, const char* user, const char* passw
     if (polygonFile) {
         readPolygon(polygonFile, &polygon);
     } else {
-        polygon.name = database;
+        polygon.name = "FULL";
         polygon.segmentsCount = 0;
     }
+    if(database) {
+        polygon.name = database;
+    } 
     osd2omm converter;
     printf("Initialize converter...\n");
     initOsd2Omm(&converter, host, user, password, &polygon, fullMemory);
@@ -627,25 +630,25 @@ static int convertOsd2Olm(const char* inputFile, char** changeFiles, int changeF
     return 0;
 }
 
-static int convertOlm2Mapper(const char* inputFile, const char* outputDirectory) {
+static int convertOlm2Mapper(const char* inputFile, const char* outputDirectory, char compress) {
     MapperConverter converter;
-    initMapperConverter(&converter, newOlmReader(inputFile), outputDirectory);
+    initMapperConverter(&converter, newOlmReader(inputFile), outputDirectory, compress);
     convertToMapper(&converter);
     return 0;
 }
 
-static int convertOmm2Mapper(const char* host, const char* user, const char* password, const char* database, const char* outputDirectory) {
+static int convertOmm2Mapper(const char* host, const char* user, const char* password, const char* database, const char* outputDirectory, char compress) {
     MapperConverter converter;
-    initMapperConverter(&converter, newOmmReader(host, user, password, database), outputDirectory);
+    initMapperConverter(&converter, newOmmReader(host, user, password, database), outputDirectory, compress);
     convertToMapper(&converter);
     return 0;
 }
 
 
-static int convertObm2Mapper(const char* inputDirectory, const char* outputDirectory, int cacheNodes) {
+static int convertObm2Mapper(const char* inputDirectory, const char* outputDirectory, int cacheNodes, char compress) {
     //printf("Converting Binary map from %s to mapper map in")
     MapperConverter converter;
-    initMapperConverter(&converter, newObmReader(inputDirectory, cacheNodes), outputDirectory);
+    initMapperConverter(&converter, newObmReader(inputDirectory, cacheNodes), outputDirectory, compress);
     convertToMapper(&converter);
     return 0;
 }
@@ -662,7 +665,7 @@ static int testReader() {
     printf("Done.\nReading node...\n");
     
     Node* node;
-    if(node = nextNode(reader)) {
+    if((node = nextNode(reader))) {
         printf("Node %i@(%lf, %lf) readed with tags: \n", node->info.id, doubleFromCoordiante(node->info.lat), doubleFromCoordiante(node->info.lon));
         printTags(&(node->tags));
     }
@@ -672,7 +675,7 @@ static int testReader() {
     //  fseek(reader.waysFile, offset, SEEK_SET);
     
     Way* way;
-    if(way = nextWay(reader)) {
+    if((way = nextWay(reader))) {
         printf("Way %i readed with tags: \n", way->info.id);
         
         printTags(&(way->tags));
@@ -684,7 +687,7 @@ static int testReader() {
     }
     printf("Done.\nReading relation...\n");
     Relation* relation;
-    if(relation = nextRelation(reader)) {
+    if((relation = nextRelation(reader))) {
         printf("Relation %i readed with tags: \n", relation->info.id);
         
         printTags(&(relation->tags));
@@ -847,11 +850,11 @@ int main(int argc, char* argv[]) {
     struct arg_file* input_file2 = arg_file0("i", "input", "<input>", "Path to input xml file. If not present stdin will be used.");
     struct arg_file* polygons_dir2 = arg_file0("p", "polygons", "<input>", "Path to directory with polygons files to cut regions.");
     struct arg_file* output_dir2 = arg_file1("o", "output", "<output>", "Path to directory with directories with converted files for each polygon. Or directory with converted files if polygons is not specified.");
+    struct arg_lit* compress_output2 = arg_lit0("c", "compress", "If to compress resulting files.");
     struct arg_end* end2 = arg_end(20);
     
-    
     void * argtable2[] = {
-        s2b, input_file2, polygons_dir2, output_dir2, end2
+        s2b, input_file2, polygons_dir2, output_dir2, compress_output2, end2
     };
     int nerrors2;
     
@@ -859,11 +862,12 @@ int main(int argc, char* argv[]) {
     struct arg_rex* b2m = arg_rex1(NULL, NULL, "b2m", NULL, REG_ICASE, "Convert from binary map to mapper format.");
     struct arg_file* input_dir3 = arg_file1("i", "input", "<input>", "Path to directory with binary map.");
     struct arg_lit* memory_nodes3 = arg_lit0("m", "memory-nodes", "If to read all nodes in memory.");
+    struct arg_lit* compress_output3 = arg_lit0("c", "compress", "If to compress resulting files.");
     struct arg_file* output_dir3 = arg_file1("o", "output", "<output>", "Path to directory with converted files.");
     struct arg_end* end3 = arg_end(20);
     
     void * argtable3[] = {
-        b2m, input_dir3, memory_nodes3, output_dir3, end3
+        b2m, input_dir3, memory_nodes3, compress_output3, output_dir3, end3
     };
     int nerrors3;
     
@@ -871,10 +875,11 @@ int main(int argc, char* argv[]) {
     struct arg_rex* l2m = arg_rex1(NULL, NULL, "l2m", NULL, REG_ICASE, "Convert from sqlite map to mapper format.");
     struct arg_file* input_file4 = arg_file1("i", "input", "<input>", "Path to file with sqlite map.");
     struct arg_file* output_dir4 = arg_file1("o", "output", "<output>", "Path to directory with converted files.");
+	struct arg_lit* compress_output4 = arg_lit0("c", "compress", "If to compress resulting files.");
     struct arg_end* end4 = arg_end(20);
     
     void * argtable4[] = {
-        l2m, input_file4, output_dir4, end4
+        l2m, input_file4, output_dir4, compress_output4, end4
     };
     int nerrors4;
     
@@ -882,13 +887,14 @@ int main(int argc, char* argv[]) {
     struct arg_rex* m2m = arg_rex1(NULL, NULL, "m2m", NULL, REG_ICASE, "Convert from mysql map to mapper format.");
     struct arg_file* host4a = arg_file1("h", "host", "<input>", "Host of Mysql server.");
     struct arg_file* user4a = arg_file1("u", "user", "<input>", "User on mysql server.");
+    struct arg_lit* compress_output4a = arg_lit0("c", "compress", "If to compress resulting files.");
     struct arg_file* password4a = arg_file0("w", "password", "<input>", "Password on mysql server.");
     struct arg_file* database4a = arg_file1("d", "database", "<input>", "DB name.");
     struct arg_file* output_dir4a = arg_file1("o", "output", "<output>", "Path to directory with converted files.");
     struct arg_end* end4a = arg_end(20);
 
     void * argtable4a[] = {
-        m2m, host4a, user4a, password4a, database4a, output_dir4a, end4a
+        m2m, host4a, user4a, password4a, database4a, output_dir4a, compress_output4a, end4a
     };
     int nerrors4a;
     
@@ -996,13 +1002,13 @@ int main(int argc, char* argv[]) {
     else if (nerrors1c ==0)
         exitcode = convertOsd2Omm(host1c->filename[0], user1c->filename[0], password1c->filename[0], database1c->filename[0], diff_file1c->count ? (char**)diff_file1c->filename : NULL, diff_file1c->count, polygon_file1c->count ? polygon_file1c->filename[0] : NULL, fullMemory1c->count);
     else if (nerrors2==0)
-        exitcode = convertOsm2Obm(input_file2->count ? input_file2->filename[0] : NULL, output_dir2->filename[0], polygons_dir2->count ? polygons_dir2->filename[0] : NULL);
+        exitcode = convertOsm2Obm(input_file2->count ? input_file2->filename[0] : NULL, output_dir2->filename[0], polygons_dir2->count ? polygons_dir2->filename[0] : NULL, compress_output2->count > 0 ? DO_COMPRESS : NO_COMPRESS);
     else if (nerrors3==0)
-        exitcode = convertObm2Mapper(input_dir3->filename[0], output_dir3->filename[0], memory_nodes3->count);
+        exitcode = convertObm2Mapper(input_dir3->filename[0], output_dir3->filename[0], memory_nodes3->count, compress_output3->count > 0 ? DO_COMPRESS : NO_COMPRESS);
     else if (nerrors4==0)
-        exitcode = convertOlm2Mapper(input_file4->filename[0], output_dir4->filename[0]);
+        exitcode = convertOlm2Mapper(input_file4->filename[0], output_dir4->filename[0], compress_output4->count > 0 ? DO_COMPRESS : NO_COMPRESS);
     else if (nerrors4a==0)
-        exitcode = convertOmm2Mapper(host4a->filename[0], user4a->filename[0], password4a->filename[0], database4a->filename[0], output_dir4->filename[0]);
+        exitcode = convertOmm2Mapper(host4a->filename[0], user4a->filename[0], password4a->filename[0], database4a->filename[0], output_dir4->filename[0], compress_output4a->count > 0 ? DO_COMPRESS : NO_COMPRESS);
     else if (nerrors5==0)
         exitcode = runTest(testTarget->sval[0]);
     else if (nerrors6==0)

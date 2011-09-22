@@ -12,6 +12,7 @@
 
 #include "collections.h"
 #include <stdint.h>
+#include <math.h> 
 
 typedef int32_t Coordinate;
 typedef struct {
@@ -24,8 +25,13 @@ typedef struct {
     OsmPoint max;
 } BBox;
 
-Coordinate coordianteFromDouble(double c);
-double doubleFromCoordiante(Coordinate c);
+#define COORDINATE_MULTIPLIER 10000000L
+
+#define coordianteFromDouble(c) ((Coordinate)round(c * COORDINATE_MULTIPLIER))
+#define doubleFromCoordiante(c) (((double)c) / COORDINATE_MULTIPLIER)
+
+//inline Coordinate coordianteFromDouble(double c);
+//inline double doubleFromCoordiante(Coordinate c);
 
 typedef uint32_t OsmId;
 Collection(OsmId, OsmIds)
@@ -45,8 +51,8 @@ typedef enum {
 } AreaPartRole;
 
 typedef struct {
-    OsmPoint location;
     OsmId id;
+    OsmPoint location;
 } MapperWayNode;
 
 Collection(MapperWayNode, MapperWayNodes)

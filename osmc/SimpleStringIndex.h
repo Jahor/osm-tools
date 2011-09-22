@@ -15,6 +15,7 @@
 
 #define SIMPLE_STRING_INDEX_LEAFS_COUNT_BITS 8
 #define SIMPLE_STRING_INDEX_LEAFS_COUNT (1<<(SIMPLE_STRING_INDEX_LEAFS_COUNT_BITS + 1) - 1)
+#define SIMPLE_STRING_INDEX_LEAFS_COUNT_MASK ((1 << SIMPLE_STRING_INDEX_LEAFS_COUNT_BITS) - 1)
 
 typedef struct ASimpleStringIndexLeaf {
     struct ASimpleStringIndexLeaf* previous;

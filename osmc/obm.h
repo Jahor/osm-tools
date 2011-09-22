@@ -106,6 +106,7 @@ typedef struct {
     BCountry* countries;
     int countriesCount;
     OsmStreamReader reader;
+	int compressed;
     
     SimpleStringIndex keysIndex;
     SimpleStringIndex rolesIndex;
@@ -160,7 +161,7 @@ typedef struct {
 } obm;
 
 #pragma mark osm2obm
-void initOsm2obmWithOutputDirectory(osm2obm* self, const char* outputDirectory, CountryPolygon* polygon, int polygonsCount);
+void initOsm2obmWithOutputDirectory(osm2obm* self, const char* outputDirectory, CountryPolygon* polygon, int polygonsCount, char compress);
 void convertOsm2ObmFromFile(osm2obm* self, const char *filename);
 void convertOsm2ObmFromStdin(osm2obm* self);
 void closeOsm2obm(osm2obm* self);

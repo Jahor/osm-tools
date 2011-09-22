@@ -40,6 +40,6 @@ Collection(Object2D, Objects2D)
 void add2DObject(Objects2D* self, OsmPoint point, Offset offset, ZoomLevel minZoomLevel, ZoomLevel maxZoomLevel);
 
 Tree2D* index2DObjects(Objects2D* objects);
-void write2DTree(Tree2D* self, FILE* file);
+void write2DTree(Tree2D* self, FILE* file, WriteCallback write);
 void free2DTree(Tree2D* self);
 #endif

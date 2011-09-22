@@ -23,8 +23,17 @@ typedef struct {
     int templateLength;
     MysqlParameter* parameters;
     char parametersCount;
+    char multiInsert;
     MYSQL* db;
 } mysql_stmt;
+
+typedef struct {
+    char* query;
+    char* queryEnd;
+    int capacity;
+    mysql_stmt* statement;
+    int rowsCount;
+} multiInsert;
 
 typedef struct {
     CountryPolygon* polygon;
@@ -58,6 +67,8 @@ typedef struct {
     mysql_stmt* nodeExistsStatement;
     mysql_stmt* wayExistsStatement;
     mysql_stmt* relationExistsStatement;
+    
+    multiInsert taglessNodesInsert;
     
     Tree16 nodesIndex;
     Tree16 waysIndex;

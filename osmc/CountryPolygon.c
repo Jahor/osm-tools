@@ -117,6 +117,9 @@ POINT_POLYGON_POSITION isPointInPolygon(Coordinate x, Coordinate y, CountryPolyg
                 return BOUNDARY;
             case CROSSING:
                 parity = 1 - parity;
+                break;
+            case INESSENTIAL:
+                break;
         }
     }
     return (parity ? INSIDE : OUTSIDE);

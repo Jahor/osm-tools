@@ -99,7 +99,7 @@ static char deleteFromDbById(sqlite3* db, sqlite3_stmt* deleteStatement, OsmId i
     sqlite3_bind_int(deleteStatement, 1, id);
     if(sqlite3_step(deleteStatement) == SQLITE_ERROR) {
         sqlite3_reset(deleteStatement);
-        fprintf(stderr, "Could not delete object id %li: %s", (long)id, sqlite3_errmsg(db));
+        fprintf(stderr, "Could not delete object id %u: %s", id, sqlite3_errmsg(db));
         return 0;
     }
     sqlite3_reset(deleteStatement);
@@ -401,6 +401,7 @@ static void writeRelations(osm2olm* self, LCountry* country) {
                     deleteFromDbById(country->db, country->deleteRelationMembersStatement, self->relations.values[r].base.info.id);
                     writeRelationMember(self->relations.values + r, country);
                     break;
+                case OSM_CHANGE_COUNT:
                 case OSM_CHANGE_NONE:
                     //Just do nothing, as db is up to date
                     break;

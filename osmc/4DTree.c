@@ -125,7 +125,7 @@ static int fullCount(Tree4D* self) {
     }
 }
 
-void write4DTree(Tree4D* self, FILE* file) {
+void write4DTree(Tree4D* self, FILE* file, WriteCallback write) {
     if(self) {
         Tree4DRecord info;
         info.info.offset = self->info.offset;
@@ -138,12 +138,17 @@ void write4DTree(Tree4D* self, FILE* file) {
         info.leftOffset = self->left ? 0 : OFFSET_NOT_DEFINED;
         info.rightOffset = self->right ? (self->left ? fullCount(self->left) : 0) * sizeof(Tree4DRecord) : OFFSET_NOT_DEFINED;
         
-        fwrite(&info, sizeof(Tree4DRecord), 1, file);
+		if (write) {
+			write(file, &info, sizeof(Tree4DRecord));
+		} else {
+			fwrite(&info, sizeof(Tree4DRecord), 1, file);
+		}
+		
         if(self->left) {
-            write4DTree(self->left, file);
+            write4DTree(self->left, file, write);
         }
         if(self->right) {
-            write4DTree(self->right, file);
+            write4DTree(self->right, file, write);
         }
     }
 } 

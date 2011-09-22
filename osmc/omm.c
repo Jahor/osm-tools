@@ -18,20 +18,159 @@
 #include <time.h>
 #include <stdarg.h>
 
-
-
 static int mysql_real_query_with_error(MYSQL* db, const char* query, unsigned long length) {
     int result = mysql_real_query(db, query, length);
     if(result) {
         fprintf(stderr, "Error executing ~~%s~~: %s.\n", query, mysql_error(db));
     } else {
-        fprintf(stderr, "Executing ~~%s~~: OK.\n", query);
+        //printf(stderr, "Executing ~~%s~~: OK.\n", query);
     }
     return result;
 }
 
 static int mysql_query_with_error(MYSQL* db, const char* query) {
     return mysql_real_query_with_error(db, query, strlen(query));
+}
+
+
+static void init_multiInsert(multiInsert* mi, mysql_stmt* statement) {
+    if(!statement->multiInsert) {
+        fprintf(stderr, "Using not multiinsert statement for multiinsert.\n");
+    }
+    mi->statement = statement;
+    mi->query = NULL;
+    mi->queryEnd = NULL;
+    mi->capacity = 0;
+    mi->rowsCount = 0;
+}
+
+//static char miquery[1024*1024*10];
+//static int micapacity = 1048576*10;
+
+static void ensure_enough_space(multiInsert* mi, int to_be_added) {
+    int qlen = 0;
+    if(!mi->query || ((qlen = strlen(mi->query)) + to_be_added >= mi->capacity)) {
+        mi->capacity = qlen + to_be_added + 1;
+        mi->query = realloc(mi->query, sizeof(char) * mi->capacity);
+        
+        mi->queryEnd = mi->query + qlen;
+    } else if (!mi->queryEnd) {
+        mi->queryEnd = mi->query;
+    }
+}
+
+static void append(multiInsert* mi, const char* string) {
+    int len = strlen(string);
+    ensure_enough_space(mi, len);
+    strcpy(mi->queryEnd, string);
+    mi->queryEnd += len;
+}
+
+static void append_char(multiInsert* mi, char c) {
+    ensure_enough_space(mi, 1);
+    *(mi->queryEnd++) = c;
+    *(mi->queryEnd) = '\0';
+}
+
+static void append_long(multiInsert* mi, long l) {
+    mi->queryEnd += sprintf(mi->queryEnd, "%li", l);
+}
+
+static void append_int(multiInsert* mi, int i) {
+    mi->queryEnd += sprintf(mi->queryEnd, "%i", i);
+}
+
+static void append_quoted_string(multiInsert* mi, mysql_stmt* statement, const char* str) {
+    append_char(mi, '\'');
+    int len = strlen(str);
+    ensure_enough_space(mi, len * 2);
+    mi->queryEnd += mysql_real_escape_string(statement->db, mi->queryEnd, str, len);
+    append_char(mi, '\'');
+}
+
+
+static void add_multiInsert(multiInsert* mi, ...) {
+    char first = 0;
+    mysql_stmt* statement = mi->statement;
+    if(!mi->queryEnd) {
+        append(mi, statement->templateParts[0]);
+        first = 1;
+    }
+    
+    va_list args;
+    va_start(args, mi);
+    unsigned long length = statement->templateLength + 20;
+    for (int j=0; j < statement->parametersCount; j++) {
+        if (statement->parameters[j] == MYSQL_PARAM_INTEGER) {
+            va_arg(args, int);
+            length += 10;
+        } else if(statement->parameters[j] == MYSQL_PARAM_LONG) {
+            va_arg(args, long);
+            length += 20;
+        } else if (statement->parameters[j] == MYSQL_PARAM_TEXT) {
+            UTF8* str = va_arg(args, UTF8*);
+            length += utf8size(str) * 2 + 4;
+        } else {
+            fprintf(stderr, "Unsupported type %i.", statement->parameters[j]);
+            return;
+        }
+    }
+    va_end(args);
+    ensure_enough_space(mi, length);
+    int i = 0;
+    if (!first) {
+        append_char(mi, ',');
+    }
+
+    append(mi, statement->templateParts[1]);
+    
+    va_start(args, mi);
+
+    for (; i < statement->parametersCount; i++) {
+        if (statement->parameters[i] == MYSQL_PARAM_INTEGER) {
+            int ivalue = va_arg(args, int);
+            append_int(mi, ivalue);
+        } else if(statement->parameters[i] == MYSQL_PARAM_LONG) {
+            long lvalue = va_arg(args, long);
+            append_long(mi, lvalue);
+        } else if (statement->parameters[i] == MYSQL_PARAM_TEXT) {
+            const char* str = va_arg(args, const char*);
+            append_quoted_string(mi, statement, str);
+            //      printf("+'%s'\n", str);
+        } else {
+            fprintf(stderr, "Unsupported type %i.", statement->parameters[i]);
+            return;
+        }
+        
+        if(statement->templateParts[i+2]) {
+            append(mi, statement->templateParts[i+2]);
+        }
+    }
+    
+    if(statement->templateParts[statement->parametersCount + 2]) {
+        append(mi, statement->templateParts[statement->parametersCount+2]);
+    }
+    
+    mi->rowsCount++;
+    va_end(args);
+}
+
+static void reinit_multiInsert(multiInsert* mi, mysql_stmt* statement) {
+    if(!statement->multiInsert) {
+        fprintf(stderr, "Using not multiinsert statement for multiinsert.\n");
+        return;
+    }
+    mi->queryEnd = NULL;
+    mi->statement = statement;
+    mi->rowsCount = 0;
+}
+
+static int exec_multiInsert(multiInsert* mi) {
+    int result = 0;
+    if(mi->queryEnd) {
+        result = mysql_query_with_error(mi->statement->db, mi->query);
+    }
+    return result;
 }
 
 static int mysql_exec(mysql_stmt* statement, ...) {
@@ -58,34 +197,48 @@ static int mysql_exec(mysql_stmt* statement, ...) {
     char* query = calloc(sizeof(char), length);
     int end = 0;
     strcpy(query, statement->templateParts[0]);
+    //printf(" %s\n", statement->templateParts[0]);
     end += strlen(statement->templateParts[0]);
-    va_start(args, statement);
+    
     int i=0;
+    int ts = 1;
+    if(statement->multiInsert) { // multiInsert supported runned as simple - just do it
+        strcpy(query + end, statement->templateParts[1]);
+        end += strlen(statement->templateParts[1]);        
+        ts++;
+    }
+    
+    va_start(args, statement);
     int l;
     for (; i < statement->parametersCount; i++) {
         if (statement->parameters[i] == MYSQL_PARAM_INTEGER) {
             int ivalue = va_arg(args, int);
             l = sprintf(query + end, "%i", ivalue);
+        //    printf("+%i\n", ivalue);
             end += l;
         } else if(statement->parameters[i] == MYSQL_PARAM_LONG) {
             long lvalue = va_arg(args, long);
             l = sprintf(query + end, "%li", lvalue);
+    //        printf("+%li\n", lvalue);
             end += l;
         } else if (statement->parameters[i] == MYSQL_PARAM_TEXT) {
             const char* str = va_arg(args, const char*);
             *(query + end++) ='\'';
             end += mysql_real_escape_string(statement->db, query + end, str, strlen(str));
             *(query + end++)='\'';
+      //      printf("+'%s'\n", str);
         } else {
-            fprintf(stderr, "Unsupported type %i.", statement->parameters[i]);
+  //          fprintf(stderr, "Unsupported type %i.", statement->parameters[i]);
             return 0;
         }
         
-        if(statement->templateParts[i+1]) {
-            strcpy(query + end, statement->templateParts[i+1]);
-            end += strlen(statement->templateParts[i+1]);
+        if(statement->templateParts[i+ts]) {
+            strcpy(query + end, statement->templateParts[i+ts]);
+            //printf("+%s\n", statement->templateParts[i+1]);
+            end += strlen(statement->templateParts[i+ts]);
         }
     }
+//    printf("==%s\n", query);
     
     va_end(args);
     int result = mysql_real_query_with_error(statement->db, query, end);
@@ -160,20 +313,20 @@ static int relationIsFullyBelongsCountry(Relation* relation, MCountry* country, 
 }
 
 static void beginTransaction(MYSQL* db) {
-    mysql_query_with_error(db, "BEGIN");
+    //mysql_query_with_error(db, "BEGIN");
 }
 
 static void commitTransaction(MYSQL* db) {
-    mysql_query_with_error(db, "COMMIT");
+    //mysql_query_with_error(db, "COMMIT");
 }
 
 static void rollbackTransaction(MYSQL* db) {
-    mysql_query_with_error(db, "ROLLBACK");
+    //mysql_query_with_error(db, "ROLLBACK");
 }
 
 static char deleteFromDbById(MYSQL* db, mysql_stmt* deleteStatement, OsmId id) {
     if(mysql_exec(deleteStatement, id)) {
-        fprintf(stderr, "Could not delete object id %li: %s\n", (long) id, mysql_error(db));
+        fprintf(stderr, "Could not delete object id %u: %s\n", id, mysql_error(db));
         return 0;
     }
     return 1;
@@ -221,28 +374,38 @@ static void newNode(void* abstractSelf, OsmId id, Coordinate lat, Coordinate lon
     //printf("New node, %i - End\n", id);
 }
 
+static multiInsert tagInsert = {NULL, NULL, 0, NULL, 0};
+
 static void writeTags(osm2omm* self, PlainTags* tags, mysql_stmt* statement, OsmId ownerId) {
+    reinit_multiInsert(&tagInsert, statement);
     for(int t = 0; t < tags->count; t++) {
         //printf("Writing tag %s=%s.\n", (char*) tags->values[t].key, (char*) tags->values[t].value);
         if(!utf8equal(tags->values[t].key, UTF8_CAST "created_by")) {
-            mysql_exec(statement, ownerId, tags->values[t].key, tags->values[t].value);
+            add_multiInsert(&tagInsert, ownerId, tags->values[t].key, tags->values[t].value);
+            //mysql_exec(statement, ownerId, tags->values[t].key, tags->values[t].value);
         }
     }
+    exec_multiInsert(&tagInsert);
 }
 
 static void writeNode(void* abstractSelf) {
     osm2omm* self = (osm2omm*) abstractSelf;
-    
     for(int c = 0; c < self->countriesCount; c++) {
         if(nodeBelongsCountry(self, self->countries + c)) {
             addTree16Node(&(self->countries[c].nodesIndex), self->node.id, self->node.id);
-//            printf("Writing node %li to DB.\n", self->node.id);
-            beginTransaction(&(self->countries[c].db));
-            mysql_exec(self->countries[c].insertNodeStatement, self->node.id, self->node.lat, self->node.lon, self->node.timestamp);
-//            printf("Writing tags of node %li to DB.\n", self->node.id);
-            writeTags(self, &(self->tags), self->countries[c].insertNodeTagStatement, self->node.id);
-            commitTransaction(&(self->countries[c].db));
-//            printf("Node %li has been written to DB.\n", self->node.id);
+            if(self->tags.count) {
+                beginTransaction(&(self->countries[c].db));
+                mysql_exec(self->countries[c].insertNodeStatement, self->node.id, self->node.lat, self->node.lon, self->node.timestamp);
+                writeTags(self, &(self->tags), self->countries[c].insertNodeTagStatement, self->node.id);
+                commitTransaction(&(self->countries[c].db));
+            } else {
+                add_multiInsert(&(self->countries[c].taglessNodesInsert), self->node.id, self->node.lat, self->node.lon, self->node.timestamp);
+                if(self->countries[c].taglessNodesInsert.rowsCount > 2000) {
+                    exec_multiInsert(&(self->countries[c].taglessNodesInsert));
+                    reinit_multiInsert(&(self->countries[c].taglessNodesInsert), self->countries[c].insertNodeStatement);
+                }
+            }
+
         }
     }
     self->tags.count = 0;
@@ -254,14 +417,19 @@ static void newWay(void* abstractSelf, OsmId id, OsmTimestamp timestamp) {
     self->way.timestamp = timestamp;
 }
 
+static multiInsert wayNodesInsert = {NULL, NULL, 0, NULL, 0};
+
 static void writeWayNodes(osm2omm* self, MCountry* country) {
     mysql_stmt* statement = country->insertWayNodeStatement;
+    reinit_multiInsert(&wayNodesInsert, statement);
     int i = 0;
     for(int n = 0; n < self->wayNodes.count; n++) {
         if(country->ifNodeExists(country, self->wayNodes.values[n].ref)) {
-            mysql_exec(statement, self->way.id, self->wayNodes.values[n].ref, i++);
+            add_multiInsert(&wayNodesInsert, self->way.id, self->wayNodes.values[n].ref, i++);
+            //mysql_exec(statement, self->way.id, self->wayNodes.values[n].ref, i++);
         }
     }
+    exec_multiInsert(&wayNodesInsert);
 }
 
 static void writeWay(void* abstractSelf) {
@@ -359,9 +527,11 @@ static void newTag(void* abstractSelf, OsmEntityType type, UTF8* key, UTF8* valu
     //printf("End New tag\n");
 }
 
+static multiInsert relationMembersInsert = {NULL, NULL, 0, NULL, 0};
 
-static void writeRelationMember(RelationChange* relation, MCountry* country) {
+static void writeRelationMembers(RelationChange* relation, MCountry* country) {
     int i=0;
+    reinit_multiInsert(&relationMembersInsert, country->insertRelationMemberStatement);
     for(int m=0;m<relation->base.relationMembers.count;m++) {
         RelationMemberInfo* member = relation->base.relationMembers.values + m;
         int inMap = 0;
@@ -379,22 +549,27 @@ static void writeRelationMember(RelationChange* relation, MCountry* country) {
             }            
         }
         if(inMap) {
-            mysql_exec(country->insertRelationMemberStatement, 
+            /*mysql_exec(country->insertRelationMemberStatement, 
                        relation->base.info.id, 
                        relationMemberType2String(relation->base.relationMembers.values[m].type), 
                        relation->base.relationMembers.values[m].ref, 
                        (char*)relation->base.relationMembers.values[m].role, 
-                       i);
+                       i);*/
+            add_multiInsert(&relationMembersInsert, relation->base.info.id, 
+                            relationMemberType2String(relation->base.relationMembers.values[m].type), 
+                            relation->base.relationMembers.values[m].ref, 
+                            (char*)relation->base.relationMembers.values[m].role, 
+                            i);
             i++;
         }
     }
+    exec_multiInsert(&relationMembersInsert);
 }
 
 static void writeRelations(osm2omm* self, MCountry* country) {
     Tree16 pseudoIndex;
     initTree16(&pseudoIndex);
-    Tree16 whishesIndex;
-    initTree16(&whishesIndex);
+
     int found;
     printf("Writing relations for %s. Total relations: %i\n", country->polygon->name, self->relations.count);
     int iterations = 0;
@@ -409,7 +584,7 @@ static void writeRelations(osm2omm* self, MCountry* country) {
                         found++;
                     } else {
                         if(self->relations.values[r].change != OSM_CHANGE_NONE) {
-                            printf("Relation %i does not belongs country\n", self->relations.values[r].base.info.id);
+                            //printf("Relation %i does not belongs country\n", self->relations.values[r].base.info.id);
                         } else {
                             printf("Relation %i exists in DB and was'nt changed\n", self->relations.values[r].base.info.id);
                         }
@@ -433,7 +608,7 @@ static void writeRelations(osm2omm* self, MCountry* country) {
             if (self->relations.values[r].change == OSM_CHANGE_CREATE) {
                 mysql_exec(country->insertRelationStatement, self->relations.values[r].base.info.id, self->relations.values[r].base.info.timestamp);
                 writeTags(self, &(self->relations.values[r].base.tags), country->insertRelationTagStatement, self->relations.values[r].base.info.id);
-                writeRelationMember(self->relations.values + r, country);
+                writeRelationMembers(self->relations.values + r, country);
             } else if (self->relations.values[r].change == OSM_CHANGE_DELETE) {
                 deleteRelationFromCountry(country, self->relations.values[r].base.info.id);
             } else if (self->relations.values[r].change == OSM_CHANGE_MODIFY) {
@@ -441,7 +616,7 @@ static void writeRelations(osm2omm* self, MCountry* country) {
                 deleteFromDbById(&(country->db), country->deleteRelationTagsStatement, self->relations.values[r].base.info.id);
                 writeTags(self, &(self->relations.values[r].base.tags), country->insertRelationTagStatement, self->relations.values[r].base.info.id);
                 deleteFromDbById(&(country->db), country->deleteRelationMembersStatement, self->relations.values[r].base.info.id);
-                writeRelationMember(self->relations.values + r, country);
+                writeRelationMembers(self->relations.values + r, country);
             }
             commitTransaction(&country->db);
             written++;
@@ -454,49 +629,90 @@ static void writeRelations(osm2omm* self, MCountry* country) {
     printf("Relations written: %i\n", written);
 }
 
-static void prepareStatement(MYSQL* db, const char* text, mysql_stmt** statement) {
+
+
+static void prepareStatementInternal(MYSQL* db, const char* text, mysql_stmt** statement, char multiInsert) {
     *statement = calloc(sizeof(mysql_stmt), 1);
     (*statement)->db = db;
     unsigned long textLength = strlen(text);
     int parametersCount = 0;
+    char valuesFound = 0;
+    int valuesBlockStart = -1;
+    int valuesBlockEnd = -1;
     for(int j = 0; j < textLength - 2; j++) {
         if(text[j + 1] == '?' && text[j] != '?' && (text[j+2] == 's' || text[j+2] == 'l' || text[j+2] == 'i')) {
             parametersCount++;
         }
+        
+        if(valuesFound && text[j] == '(') {
+            valuesBlockStart = j - 1;
+        } else if(valuesFound && text[j] == ')') {
+            valuesBlockEnd = j - 1;
+        } else if(multiInsert && j < textLength - 6 && strncmp((text + j), "VALUES", 6) == 0) {
+            valuesFound = 1;
+        }
     }
+    
+    if(!valuesFound || valuesBlockStart < 0) {
+        multiInsert = 0;
+    }
+    
+    (*statement)->multiInsert = multiInsert;
+    
     (*statement)->parametersCount = parametersCount;
     (*statement)->parameters = malloc(sizeof(MysqlParameter) * parametersCount);
-    (*statement)->templatePartsCount = parametersCount + 1;
-    (*statement)->templateParts = malloc(sizeof(char**) * (parametersCount + 1));
+    (*statement)->templatePartsCount = parametersCount + (multiInsert ? 3 : 1);
+    (*statement)->templateParts = malloc(sizeof(char**) * (*statement)->templatePartsCount);
     (*statement)->templateParts[parametersCount] = NULL;
     char* partStart = (char*) text;
     int partNumber = 0;
     int i = 0;
     (*statement)->templateLength = 0;
     for(; i < textLength; i++) {
-        if((i < textLength - 2 && text[i + 1] == '?' && text[i] != '?' && (text[i+2] == 's' || text[i+2] == 'l' || text[i+2] == 'i')) || i == (textLength - 1)) {
+        if((i < textLength - 2 
+            && text[i + 1] == '?' 
+            && text[i] != '?' 
+            && (text[i+2] == 's' 
+                || text[i+2] == 'l' 
+                || text[i+2] == 'i')) 
+           || i == (textLength - 1)
+           || (i == valuesBlockStart && multiInsert)
+           || (i == valuesBlockEnd && multiInsert)) {
             int partLength = text + i - partStart + 1;
             (*statement)->templateLength += partLength;
-            (*statement)->templateParts[partNumber] = malloc(sizeof(char) * (partLength + 1));
+            (*statement)->templateParts[partNumber] = calloc(sizeof(char), partLength + 1);
             strncpy((*statement)->templateParts[partNumber], partStart, partLength);
-            if(i < textLength - 2) {
+            if(i < textLength - 2 && i != valuesBlockStart) {
                 switch (text[i+2]) {
                     case 's':
-                        (*statement)->parameters[partNumber] = MYSQL_PARAM_TEXT;
+                        (*statement)->parameters[partNumber - multiInsert] = MYSQL_PARAM_TEXT;
                         break;
                     case 'l':
-                        (*statement)->parameters[partNumber] = MYSQL_PARAM_LONG;
+                        (*statement)->parameters[partNumber - multiInsert] = MYSQL_PARAM_LONG;
                         break;
                     case 'i':
-                        (*statement)->parameters[partNumber] = MYSQL_PARAM_INTEGER;
+                        (*statement)->parameters[partNumber - multiInsert] = MYSQL_PARAM_INTEGER;
                         break;
                 }   
             }
             partNumber++;
-            partStart = (char*)(text + i + 3);
-            i+= 2;
+            if (i != valuesBlockStart && i != valuesBlockEnd) {
+                partStart = (char*)(text + i + 3);
+                i+= 2;
+            } else {
+                partStart = (char*)(text + i + 1);
+                
+            }
         }
     }
+}
+
+static void prepareStatement(MYSQL* db, const char* text, mysql_stmt** statement) {
+    prepareStatementInternal(db, text, statement, 0);
+}
+
+static void prepareMutiInsertStatement(MYSQL* db, const char* text, mysql_stmt** statement) {
+    prepareStatementInternal(db, text, statement, 1);    
 }
 
 static void mysql_finalize(mysql_stmt* statement) {
@@ -576,24 +792,24 @@ void initOsm2OmmInternal(osm2omm* self, const char* host, const char* user, cons
 
 static void initInsertStatements(MCountry* country) {
     MYSQL* db = &(country->db);
-    prepareStatement(db, "INSERT INTO current_nodes(id, latitude, longitude, visible, timestamp, tile) VALUES (?l, ?l, ?l, 1, ?l, -1)", 
+    prepareMutiInsertStatement(db, "INSERT INTO current_nodes(id, latitude, longitude, visible, timestamp, tile) VALUES (?l, ?l, ?l, 1, ?l, -1)", 
                      &(country->insertNodeStatement));
     
-    prepareStatement(db, "INSERT INTO current_node_tags(id, k, v) VALUES (?l, ?s, ?s)", 
+    prepareMutiInsertStatement(db, "INSERT INTO current_node_tags(id, k, v) VALUES (?l, ?s, ?s)", 
                      &(country->insertNodeTagStatement));
     
     prepareStatement(db, "INSERT INTO current_ways(id, visible, timestamp, user_id) VALUES (?l, 1, ?l, -1)", 
                      &(country->insertWayStatement));
-    prepareStatement(db, "INSERT INTO current_way_tags(id, k, v) VALUES (?l, ?s, ?s)", 
+    prepareMutiInsertStatement(db, "INSERT INTO current_way_tags(id, k, v) VALUES (?l, ?s, ?s)", 
                      &(country->insertWayTagStatement));
-    prepareStatement(db, "INSERT INTO current_way_nodes(id, node_id, sequence_id) VALUES (?l, ?l, ?l)", 
+    prepareMutiInsertStatement(db, "INSERT INTO current_way_nodes(id, node_id, sequence_id) VALUES (?l, ?l, ?l)", 
                      &(country->insertWayNodeStatement));
     
     prepareStatement(db, "INSERT INTO current_relations(id, visible, timestamp, user_id) VALUES (?l, 1, ?l, -1)", 
                      &(country->insertRelationStatement));
-    prepareStatement(db, "INSERT INTO current_relation_tags(id, k, v) VALUES (?l, ?s, ?s)", 
+    prepareMutiInsertStatement(db, "INSERT INTO current_relation_tags(id, k, v) VALUES (?l, ?s, ?s)", 
                      &(country->insertRelationTagStatement));
-    prepareStatement(db, "INSERT INTO current_relation_members(id, member_type, member_id, member_role, sequence_id) VALUES (?l, ?s, ?l, ?s, ?l)", 
+    prepareMutiInsertStatement(db, "INSERT INTO current_relation_members(id, member_type, member_id, member_role, sequence_id) VALUES (?l, ?s, ?l, ?s, ?l)", 
                      &(country->insertRelationMemberStatement));
     
     country->nodeExistsStatement = NULL;
@@ -602,7 +818,7 @@ static void initInsertStatements(MCountry* country) {
 }
 
 static void prepareForBulkImport(MYSQL* db) {
-    //TODO
+    mysql_query_with_error(db, "LOCK TABLES current_nodes WRITE, current_ways WRITE, current_way_nodes WRITE, current_relations WRITE, current_relation_members WRITE, current_node_tags WRITE, current_way_tags WRITE, current_relation_tags WRITE");
 }
 
 static void initCountryForInserts(MCountry* country) {
@@ -617,8 +833,6 @@ static void initCountryForInserts(MCountry* country) {
     free(dbQuery);
     
     mysql_select_db(db, country->polygon->name);
-    
-    prepareForBulkImport(db);
     
     mysql_query_with_error(db, "DROP TABLE IF EXISTS current_nodes");
     mysql_query_with_error(db, "DROP TABLE IF EXISTS current_ways");
@@ -638,12 +852,17 @@ static void initCountryForInserts(MCountry* country) {
     mysql_query_with_error(db, "CREATE TABLE current_way_tags         (id INTEGER, k nvarchar(255), v nvarchar(255), UNIQUE KEY (id, k))");
     mysql_query_with_error(db, "CREATE TABLE current_relation_tags    (id INTEGER, k nvarchar(255), v nvarchar(255), UNIQUE KEY (id, k))");
     
+    prepareForBulkImport(db);
+    
     country->ifNodeExists = checkNodeInTree16;
     country->ifWayExists = checkWayInTree16;
     country->ifRelationExists = checkRelationInTree16;
     
-    
     initInsertStatements(country);
+    
+    init_multiInsert(&(country->taglessNodesInsert), country->insertNodeStatement);
+/*    country->taglessNodesInsert.query = malloc(sizeof(char) * 16001000);
+    country->taglessNodesInsert.capacity = 16001000;*/
 }
 
 void initOsm2Omm(osm2omm* self, const char* host, const char* user, const char* password, CountryPolygon* polygons, int polygonsCount) {
@@ -660,11 +879,18 @@ void convertOsm2OmmFromStdin(osm2omm* self) {
 
 void closeOsm2OmmInternal(osm2omm* self, char createIndicies) {
     for(int c=0;c < self->countriesCount; c++) {
+        if(self->countries[c].taglessNodesInsert.rowsCount > 0) {
+            exec_multiInsert(&(self->countries[c].taglessNodesInsert));
+        }
         
         writeRelations(self, self->countries + c);
         
         MCountry* country = self->countries + c;
+        freeTree16(&(country->nodesIndex));
+        freeTree16(&(country->waysIndex));
+        freeTree16(&(country->relationsIndex));
         MYSQL* db = &(country->db);
+        mysql_query_with_error(db, "UNLOCK TABLES");
         if (createIndicies) {
             mysql_query_with_error(db, "CREATE INDEX way_nodes_way_index                 ON current_way_nodes        (id      ASC);");
             mysql_query_with_error(db, "CREATE INDEX way_nodes_node_index                ON current_way_nodes        (node_id ASC);");
@@ -676,7 +902,6 @@ void closeOsm2OmmInternal(osm2omm* self, char createIndicies) {
             mysql_query_with_error(db, "CREATE INDEX relation_member_member_index        ON current_relation_members      (member_id, member_type);");
             mysql_query_with_error(db, "CREATE INDEX relation_member_relation_index      ON current_relation_members      (id ASC);");
         }
-        
         
         mysql_finalize(country->nodeExistsStatement);
         mysql_finalize(country->wayExistsStatement);
@@ -1082,6 +1307,7 @@ static void initCountryForUpdatesCommon(MCountry* country) {
                      &(country->deleteRelationTagsStatement));
     prepareStatement(db, "DELETE FROM current_relation_members WHERE id = ?l", 
                      &(country->deleteRelationMembersStatement));
+    init_multiInsert(&(country->taglessNodesInsert), country->insertNodeStatement);
 }
 
 static char checkInDb(mysql_stmt* statement, OsmId id) {
@@ -1131,7 +1357,7 @@ static void initCountryForUpdates(MCountry* country) {
     mysql_query_with_error(db, "SELECT id FROM current_nodes");
     MYSQL_RES* result = mysql_use_result(db);
     MYSQL_ROW row;
-    while(row = mysql_fetch_row(result)) {
+    while((row = mysql_fetch_row(result))) {
         OsmId id = atol(row[0]);
         addTree16Node(&(country->nodesIndex), id, id);
     }
@@ -1139,7 +1365,7 @@ static void initCountryForUpdates(MCountry* country) {
     printf("Preloading ways ids...\n");
     mysql_query_with_error(db, "SELECT id FROM current_ways");
     result = mysql_use_result(db);
-    while(row = mysql_fetch_row(result)) {
+    while((row = mysql_fetch_row(result))) {
         OsmId id = atol(row[0]);
         addTree16Node(&(country->waysIndex), id, id);
     }
@@ -1164,7 +1390,7 @@ void initOsd2Omm(osd2omm* self, const char* host, const char* user, const char* 
             int i = 0;
             mysql_query_with_error(db, "SELECT id FROM current_relations");
             result = mysql_use_result(db);
-            while (row = mysql_fetch_row(result)) {
+            while ((row = mysql_fetch_row(result))) {
                 RelationChange* relation = self->base.relations.values + i;
                 relation->base.info.id = atol(row[0]);
                 relation->change = OSM_CHANGE_NONE;

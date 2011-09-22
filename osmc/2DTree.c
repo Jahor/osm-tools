@@ -95,17 +95,17 @@ static int fullCount(Tree2D* self) {
         return 1;
     } else {
         int count = 1;
-        if(self->left) {
+        if (self->left) {
             count += fullCount(self->left);
         }
-        if(self->right) {
+        if (self->right) {
             count += fullCount(self->right);
         }
         return count;
     }
 }
 
-void write2DTree(Tree2D* self, FILE* file) {
+void write2DTree(Tree2D* self, FILE* file, WriteCallback write) {
     if(self) {
         Tree2DRecord info;
         info.info.offset = self->info.offset;
@@ -116,12 +116,17 @@ void write2DTree(Tree2D* self, FILE* file) {
         info.info.maxZoomLevel = self->info.maxZoomLevel;
         info.rightOffset = self->right ? (self->left ? fullCount(self->left) : 0) * sizeof(Tree2DRecord) : OFFSET_NOT_DEFINED;
     
-        fwrite(&info, sizeof(Tree2DRecord), 1, file);
+		if (write) {
+			write(file, &info, sizeof(Tree2DRecord));
+		} else {
+            fwrite(&info, sizeof(Tree2DRecord), 1, file);
+		}
+        
         if(self->left) {
-            write2DTree(self->left, file);
+            write2DTree(self->left, file, write);
         }
         if(self->right) {
-            write2DTree(self->right, file);
+            write2DTree(self->right, file, write);
         }   
     }
 }

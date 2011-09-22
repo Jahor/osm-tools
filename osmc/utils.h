@@ -19,8 +19,20 @@ typedef uint16_t ZoomLevel;
 #define MAX_ZOOM_LEVEL 18
 #define MIN_ZOOM_LEVEL 0
 
+#define NO_COMPRESS 0
+#define DO_COMPRESS 1
+#define AUTO_COMPRESS 2
+
+typedef int (*ReadCallback) (void * context, void * buffer, int len);
+typedef int (*WriteCallback) (void * context, void * buffer, int len);
+typedef int (*CloseCallback) (void * context);
+
+WriteCallback getWrite(char compress);
+ReadCallback getRead(char compress);
+CloseCallback getClose(char compress);
+
 char* fullFileName(const char* name, const char* directory);
-FILE* openFile(const char* name, const char* outputDirectory, const char* mode);
+FILE* openFile(const char* name, const char* outputDirectory, const char* mode, char compressed);
 
 int mapFile(const char * inPathName, size_t record_size, void ** outDataPtr, size_t* outDataLength);
 void unmapFile(void * dataPtr, size_t record_size, size_t recordsCount);

@@ -39,6 +39,6 @@ Collection(Object4D, Objects4D)
 void add4DObject(Objects4D* self, BBox bounds, Offset offset, ZoomLevel minZoomLevel, ZoomLevel maxZoomLevel);
 
 Tree4D* index4DObjects(Objects4D* objects);
-void write4DTree(Tree4D* self, FILE* file);
+void write4DTree(Tree4D* self, FILE* file, WriteCallback write);
 void free4DTree(Tree4D* self);
 #endif

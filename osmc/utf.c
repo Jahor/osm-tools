@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <libxml/xmlstring.h>
 
-typedef unsigned long	UTF32;	/* at least 32 bits */
+typedef unsigned long UTF32;	/* at least 32 bits */
 
 static const int halfShift  = 10; /* used for shifting by 10 bits */
 

@@ -19,7 +19,7 @@ unsigned long djb2Hash(UTF8 *str)
     unsigned long hash = 5381;
     UTF8 c;
     
-    while (c = *str++)
+    while ((c = *str++))
         hash = hash * 33 + c;
     
     return hash;
@@ -31,7 +31,7 @@ static void growSimpleStringIndexValues(SimpleStringIndex* index) {
 }
 
 int addToSimpleStringIndex(SimpleStringIndex* index, UTF8* key) {
-    int leafIndex = djb2Hash(key) && SIMPLE_STRING_INDEX_LEAFS_COUNT;
+    int leafIndex = djb2Hash(key) & SIMPLE_STRING_INDEX_LEAFS_COUNT_MASK;
     if(index->valuesCapacity < index->valuesCount + 1) {
         growSimpleStringIndexValues(index);
     }   
@@ -64,7 +64,7 @@ int findSimpleStringIndexOf(SimpleStringIndex* index, UTF8* key) {
         key = UTF8_CAST"EMPTY_STRING";
     }
 	//printf("Get key for %s\n", key);
-    int leafIndex = djb2Hash(key) && SIMPLE_STRING_INDEX_LEAFS_COUNT;
+    int leafIndex = djb2Hash(key) & SIMPLE_STRING_INDEX_LEAFS_COUNT_MASK;
 	//printf("Hash: %i\n", leafIndex);
     SimpleStringIndexLeaf* leaf = index->leafs[leafIndex];
 	//printf("Leaf for hash: %i\n", leaf != 0);
@@ -90,7 +90,7 @@ int findSimpleStringIndexOfD(SimpleStringIndex* index, UTF8* key) {
         key = UTF8_CAST"EMPTY_STRING";
     }
 	printf("Get key for %s\n", key);
-    int leafIndex = djb2Hash(key) && SIMPLE_STRING_INDEX_LEAFS_COUNT;
+    int leafIndex = djb2Hash(key) & SIMPLE_STRING_INDEX_LEAFS_COUNT_MASK;
 	printf("Hash: %i\n", leafIndex);
     SimpleStringIndexLeaf* leaf = index->leafs[leafIndex];
 	printf("Leaf for hash: %i\n", leaf != 0);

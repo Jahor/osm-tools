@@ -86,7 +86,7 @@ static void growBTags(osm2obm* self) {
 }
 
 static int btagSlotsCount(UTF8* value) {
-    int slots = ceil(((double)utf8size(value)) / ATTRIBUTE_VALUE_LENGTH);
+    int slots = ceil(((double)utf8size(value)) / (ATTRIBUTE_VALUE_LENGTH - 2));
     return slots;
 }
 
@@ -379,10 +379,11 @@ static void newRelationMember(void* self, OsmId ref, OsmEntityType type, UTF8* r
     addBRelationMember((osm2obm*)self, ref, type, roleIndex);
 }
 
-void initOsm2obmWithOutputDirectory(osm2obm* self, const char* outputDirectory, CountryPolygon* polygons, int polygonsCount) {
+void initOsm2obmWithOutputDirectory(osm2obm* self, const char* outputDirectory, CountryPolygon* polygons, int polygonsCount, char compress) {
     
     initOsmStreamReader(&(self->reader), self);
     
+	self->compressed = compress;
     self->reader.newTag = newTag;
     self->reader.newNode = newNode;
     self->reader.newWayNode = newWayNode;
@@ -390,9 +391,9 @@ void initOsm2obmWithOutputDirectory(osm2obm* self, const char* outputDirectory, 
     self->reader.newRelationMember = newRelationMember;
     self->reader.newRelation = newRelation;
     
-    self->reader.finishNode[OSM_CHANGE_CREATE] = writeNode;
-    self->reader.finishWay[OSM_CHANGE_CREATE] = writeWay;
-    self->reader.finishRelation[OSM_CHANGE_CREATE] = writeRelation;
+    self->reader.finishNode[OSM_CHANGE_NONE] = writeNode;
+    self->reader.finishWay[OSM_CHANGE_NONE] = writeWay;
+    self->reader.finishRelation[OSM_CHANGE_NONE] = writeRelation;
     
     self->tags.values = NULL;
     self->tags.count = 0;
@@ -446,9 +447,9 @@ void initOsm2obmWithOutputDirectory(osm2obm* self, const char* outputDirectory, 
         if(-1 == mkdir(self->countries[p].outputDirectory, S_IRWXU) && errno != EEXIST) {
             fprintf(stderr, "Error creating directory %s: %i\n", self->countries[p].outputDirectory, errno);        
         }
-        self->countries[p].nodesFile = openFile("nodes.obm", self->countries[p].outputDirectory, "wb+");
-        self->countries[p].waysFile = openFile("ways.obm", self->countries[p].outputDirectory, "wb+");
-        self->countries[p].relationsFile = openFile("relations.obm", self->countries[p].outputDirectory, "wb+");
+        self->countries[p].nodesFile = openFile("nodes.obm", self->countries[p].outputDirectory, "wb+", compress);
+        self->countries[p].waysFile = openFile("ways.obm", self->countries[p].outputDirectory, "wb+", compress);
+        self->countries[p].relationsFile = openFile("relations.obm", self->countries[p].outputDirectory, "wb+", compress);
         self->countries[p].polygon = polygons+p;
     }
 }
@@ -462,17 +463,17 @@ void closeOsm2obm(osm2obm* self) {
         fclose(self->countries[c].waysFile);
         fclose(self->countries[c].relationsFile);
         
-        FILE* keysFile = openFile("keys.l", self->countries[c].outputDirectory, "w+");
-        FILE* rolesFile = openFile("roles.l", self->countries[c].outputDirectory, "w+");
+        FILE* keysFile = openFile("keys.l", self->countries[c].outputDirectory, "w+", self->compressed);
+        FILE* rolesFile = openFile("roles.l", self->countries[c].outputDirectory, "w+", self->compressed);
         
         writeSimpleStringIndex(&(self->keysIndex), keysFile);    
         writeSimpleStringIndex(&(self->rolesIndex), rolesFile);
         fclose(keysFile);
         fclose(rolesFile);
         
-        FILE* nodesIndexFile = openFile("nodes.idx", self->countries[c].outputDirectory, "wb+");
-        FILE* waysIndexFile = openFile("ways.idx", self->countries[c].outputDirectory, "wb+");
-        FILE* relationsIndexFile = openFile("relations.idx", self->countries[c].outputDirectory, "wb+");
+        FILE* nodesIndexFile = openFile("nodes.idx", self->countries[c].outputDirectory, "wb+", self->compressed);
+        FILE* waysIndexFile = openFile("ways.idx", self->countries[c].outputDirectory, "wb+", self->compressed);
+        FILE* relationsIndexFile = openFile("relations.idx", self->countries[c].outputDirectory, "wb+", self->compressed);
         saveTree16ToFile(&(self->countries[c].nodesIndex), nodesIndexFile, 0, 0);
         saveTree16ToFile(&(self->countries[c].waysIndex), waysIndexFile, 0, 0);
         saveTree16ToFile(&(self->countries[c].relationsIndex), relationsIndexFile, 0, 0);
@@ -565,19 +566,19 @@ static Node* readNodeFromFile(obm* self, Node* node, FILE* nodesFile) {
 }
 
 void initObm(obm* self, const char* directory, int cacheNodes) {
-    FILE* nodesFile = openFile("nodes.obm", directory, "rb+");
+    FILE* nodesFile = openFile("nodes.obm", directory, "rb+", AUTO_COMPRESS);
     
     self->cacheNodes = cacheNodes;
     if(!self->cacheNodes) {
         self->nodesFile = nodesFile;    
     }
 
-    self->waysFile = openFile("ways.obm", directory, "rb+");
-    self->relationsFile = openFile("relations.obm", directory, "rb+");
+    self->waysFile = openFile("ways.obm", directory, "rb+", AUTO_COMPRESS);
+    self->relationsFile = openFile("relations.obm", directory, "rb+", AUTO_COMPRESS);
     
-    initTree16WithFile(&(self->nodesIndex), openFile("nodes.idx", directory, "rb+"));
-    initTree16WithFile(&(self->waysIndex), openFile("ways.idx", directory, "rb+"));
-    initTree16WithFile(&(self->relationsIndex), openFile("relations.idx", directory, "rb+"));
+    initTree16WithFile(&(self->nodesIndex), openFile("nodes.idx", directory, "rb+", AUTO_COMPRESS));
+    initTree16WithFile(&(self->waysIndex), openFile("ways.idx", directory, "rb+", AUTO_COMPRESS));
+    initTree16WithFile(&(self->relationsIndex), openFile("relations.idx", directory, "rb+", AUTO_COMPRESS));
     if(!self->cacheNodes) {
         self->currentNode = calloc(sizeof(Node), 1);
         initPlainTags(&(self->currentNode->tags));
@@ -592,11 +593,11 @@ void initObm(obm* self, const char* directory, int cacheNodes) {
     self->currentRelation.relationMembers.values = NULL;
     self->currentRelation.relationMembers.count = 0;
     
-    FILE* keysFile = openFile("keys.l", directory, "r+");
+    FILE* keysFile = openFile("keys.l", directory, "r+", AUTO_COMPRESS);
     initSimpleStringIndexFromFile(&(self->keysIndex), keysFile);
     fclose(keysFile);
     
-    FILE* rolesFile = openFile("roles.l", directory, "r+");
+    FILE* rolesFile = openFile("roles.l", directory, "r+", AUTO_COMPRESS);
     initSimpleStringIndexFromFile(&(self->rolesIndex), rolesFile);
     fclose(rolesFile);
 

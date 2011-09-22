@@ -8,18 +8,17 @@
  */
 
 #include "MapperTypes.h"
-#include <math.h>
 #include <stdlib.h>
 
-static const long int coordinateMultiplier = 10000000;
+//static const long int coordinateMultiplier = 10000000;
 
-Coordinate coordianteFromDouble(double c) {
+/*inline Coordinate coordianteFromDouble(double c) {
     return round(c * coordinateMultiplier);
 }
 
-double doubleFromCoordiante(Coordinate c) {
+inline double doubleFromCoordiante(Coordinate c) {
     return ((double)c) / coordinateMultiplier;
-}
+}*/
 
 CollectionImplGeneric(MapperWayNode, MapperWayNodes, 11)
 CollectionImplGeneric(OsmId, OsmIds, 5)

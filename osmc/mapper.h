@@ -16,6 +16,7 @@
 #include "MapperArea.h"
 #include "MapperWay.h"
 #include "MapperPoint.h"
+#include "utils.h"
 
 #pragma mark Common
 typedef struct {
@@ -27,7 +28,7 @@ typedef struct {
 Collection(MapperPolygon, MapperPolygons)
 
 typedef struct {
-    int id;
+    OsmId id;
     BBox bounds;
     int nameLength;
     UTF8* name;
@@ -50,6 +51,9 @@ typedef struct {
     FILE* areasLocationIndexFile;
     
     MapInformation mapInformation;
+	
+	char compressed;
+	WriteCallback write;
     
     SimpleStringIndex attributesIndex;
     SimpleStringIndex typesIndex; 
@@ -67,7 +71,7 @@ typedef struct {
     Tree16 areasIndex;
 } MapperWriter;
 
-void initMapperWriter(MapperWriter* self, const char* outputDirectory);
+void initMapperWriter(MapperWriter* self, const char* outputDirectory, char compress);
 
 void closeMapperWriter(MapperWriter* self);
 
@@ -89,7 +93,7 @@ typedef struct {
     MultipolygonRelations multipolygons;
 } MapperConverter;
 
-void initMapperConverter(MapperConverter* self, OsmDbReader* reader, const char* outputDirectory);
+void initMapperConverter(MapperConverter* self, OsmDbReader* reader, const char* outputDirectory, char compress);
 void convertToMapper(MapperConverter* self);
 
 #pragma mark Reader
@@ -103,6 +107,9 @@ typedef struct {
     FILE* waysLocationIndexFile;
     FILE* areasLocationIndexFile;
     
+	CloseCallback* close;
+	ReadCallback* read;
+	
     MapInformation mapInformation;
     
     SimpleStringIndex attributesIndex;

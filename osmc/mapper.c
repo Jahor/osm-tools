@@ -44,17 +44,17 @@ CollectionImplAdd(MapperPolygon, MapperPolygons)
 static MapperAttributes pointAttributes = {NULL, 0, 0};
 static MapperAttribute emptyPointAttribute = {0, {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
 
-int writeMapperPointTags(FILE* file, int *current) {
+int writeMapperPointTags(FILE* file, int *current, WriteCallback write) {
     int tagsLeft = pointAttributes.count - *current;
     if( tagsLeft > POINT_ATTRIBUTES_COUNT) {
-        fwrite(pointAttributes.values + *current, sizeof(MapperAttribute), POINT_ATTRIBUTES_COUNT, file);
+		write(file, pointAttributes.values + *current, sizeof(MapperAttribute) * POINT_ATTRIBUTES_COUNT);
         *current= *current + POINT_ATTRIBUTES_COUNT;
     } else {
         if(tagsLeft) {
-            fwrite(pointAttributes.values + *current, sizeof(MapperAttribute), tagsLeft, file);
+            write(file, pointAttributes.values + *current, sizeof(MapperAttribute)* tagsLeft);
         }
         for(int i=0; i < POINT_ATTRIBUTES_COUNT - tagsLeft; i++) {
-            fwrite(&emptyPointAttribute, sizeof(MapperAttribute), 1, file);
+            write(file, &emptyPointAttribute, sizeof(MapperAttribute));
         }
         *current= pointAttributes.count;
     }
@@ -62,7 +62,7 @@ int writeMapperPointTags(FILE* file, int *current) {
 }
 
 
-long int writeMapperPoint(FILE* file, OsmId id, Coordinate x, Coordinate y, PlainTags* tags, MapperClassId class, SimpleStringIndex* attributesIndex) {
+long int writeMapperPoint(FILE* file, OsmId id, Coordinate x, Coordinate y, PlainTags* tags, MapperClassId class, SimpleStringIndex* attributesIndex, WriteCallback write) {
     //printf("Write to file %i\n", file);
     MapperPointInfo point;
     point.id = id;
@@ -77,8 +77,8 @@ long int writeMapperPoint(FILE* file, OsmId id, Coordinate x, Coordinate y, Plai
     int offset = 0;
     //printf("writing...\n");
     while(tagsLeft) {
-        fwrite(&(point), sizeof(MapperPointInfo), 1, file);
-        tagsLeft = writeMapperPointTags(file, &currentTag);
+        write(file, &(point), sizeof(MapperPointInfo));
+        tagsLeft = writeMapperPointTags(file, &currentTag, write);
         offset += sizeof(MapperPoint);
     }
     removeAllMapperAttributes(&pointAttributes);
@@ -89,36 +89,35 @@ long int writeMapperPoint(FILE* file, OsmId id, Coordinate x, Coordinate y, Plai
 static MapperPartAttributes partAttributes = { NULL, 0, 0};
 static MapperPartAttribute emptyPartAttribute = {0,{0, {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}}};
 
-int writeMapperPartTags(FILE* file, int *current, int maxCount) {
+int writeMapperPartTags(FILE* file, int *current, int maxCount, WriteCallback write) {
     int tagsLeft = partAttributes.count - *current;
-    if( tagsLeft > maxCount) {
-        fwrite(partAttributes.values + *current, sizeof(MapperPartAttribute), maxCount, file);
+    if (tagsLeft > maxCount) {
+        write(file, partAttributes.values + *current, sizeof(MapperPartAttribute) * maxCount);
         *current= *current + maxCount;
     } else {
         if(tagsLeft) {
-            fwrite(partAttributes.values + *current, sizeof(MapperPartAttribute), tagsLeft, file);
+            write(file, partAttributes.values + *current, sizeof(MapperPartAttribute) * tagsLeft);
         }
         for(int i=0; i < maxCount - tagsLeft; i++) {
-            fwrite(&emptyPartAttribute, sizeof(MapperPartAttribute), 1, file);
+            write(file, &emptyPartAttribute, sizeof(MapperPartAttribute));
         }
         *current= partAttributes.count;
     }
     return partAttributes.count > *current;    
 }
 
-static MapperWayNode emptyWayNode = {{0,0},0};
+static MapperWayNode emptyWayNode = {0, {0,0}};
 
-int writeMapperWayNodes(FILE* file, MapperWayNodes* nodes, int *current, int maxCount) {
-    int nodesLeft = min(nodes->count - *current, maxCount);
-    int nodesWritten = fwrite(nodes->values + *current, sizeof(MapperWayNode), nodesLeft, file);
-    *current += nodesWritten;
-    for(int w=0; w< maxCount - nodesWritten; w++) {
-        fwrite(&emptyWayNode, sizeof(MapperWayNode), 1, file);
+int writeMapperWayNodes(FILE* file, MapperWayNodes* nodes, int *current, int maxCount, int count, WriteCallback write) {
+    write(file, nodes->values + *current, sizeof(MapperWayNode) * count);
+    *current += count;
+    for(int w=0; w < maxCount - count; w++) {
+        write(file, &emptyWayNode, sizeof(MapperWayNode));
     }
     return nodes->count > *current;
 }
 
-long int writeMapperWay(FILE* file, OsmId id, OsmId groupId, MapperWayNodes* nodes, BBox bbox, PlainTags* tags, MapperClassId class, SimpleStringIndex* attributesIndex) {    
+long int writeMapperWay(FILE* file, OsmId id, OsmId groupId, MapperWayNodes* nodes, BBox bbox, PlainTags* tags, MapperClassId class, SimpleStringIndex* attributesIndex, WriteCallback write) {    
     MapperWayInfo way;
     way.id = id;
     way.groupId = groupId;
@@ -135,9 +134,11 @@ long int writeMapperWay(FILE* file, OsmId id, OsmId groupId, MapperWayNodes* nod
     mapperPartAttributesFromTags(&partAttributes, 0, tags, attributesIndex);
     //printf("Write...\n");
     while(tagsLeft || nodesLeft) {
-        fwrite(&(way), sizeof(MapperWayInfo), 1, file);
-        tagsLeft = writeMapperPartTags(file, &currentTag, WAY_ATTRIBUTES_COUNT);
-        nodesLeft = writeMapperWayNodes(file, nodes, &currentNode, WAY_NODES_COUNT);
+		int polygonPartNodes = min(nodes->count - currentNode, WAY_NODES_COUNT);
+        write(file, &(way), sizeof(MapperWayInfo));
+        tagsLeft = writeMapperPartTags(file, &currentTag, WAY_ATTRIBUTES_COUNT, write);
+	    
+        nodesLeft = writeMapperWayNodes(file, nodes, &currentNode, WAY_NODES_COUNT, polygonPartNodes, write);
         offset += sizeof(MapperWay);
     }
     //printf("Done.\n");
@@ -145,7 +146,7 @@ long int writeMapperWay(FILE* file, OsmId id, OsmId groupId, MapperWayNodes* nod
     return offset;
 }
 
-long int writeMapperArea(FILE* file, OsmId id, MapperPolygons* polygons, BBox bbox, PlainTags* tags, MapperClassId class, SimpleStringIndex* attributesIndex) {
+long int writeMapperArea(FILE* file, OsmId id, MapperPolygons* polygons, BBox bbox, PlainTags* tags, MapperClassId class, SimpleStringIndex* attributesIndex, WriteCallback write) {
     
     MapperAreaInfo area;
     area.id = id;
@@ -164,10 +165,12 @@ long int writeMapperArea(FILE* file, OsmId id, MapperPolygons* polygons, BBox bb
     int currentPolygonIndex = 0;
     
     while(nodesLeft || tagsLeft) {
-        fwrite(&area, sizeof(MapperAreaInfo), 1, file);
-        fwrite(&(currentPolygon->info), sizeof(MapperPolygonInfo), 1, file);
-        tagsLeft = writeMapperPartTags(file, &currentTag, AREA_ATTRIBUTES_COUNT);
-        nodesLeft = writeMapperWayNodes(file, &(currentPolygon->wayNodes), &currentNode, AREA_NODES_COUNT);
+        write(file, &area, sizeof(MapperAreaInfo));
+		int polygonPartNodes = max(0, min(currentPolygon->wayNodes.count - currentNode, AREA_NODES_COUNT));
+		currentPolygon->info.nodesCount = polygonPartNodes;
+        write(file, &(currentPolygon->info), sizeof(MapperPolygonInfo));
+        tagsLeft = writeMapperPartTags(file, &currentTag, AREA_ATTRIBUTES_COUNT, write);
+        nodesLeft = writeMapperWayNodes(file, &(currentPolygon->wayNodes), &currentNode, AREA_NODES_COUNT, polygonPartNodes, write);
         if(!nodesLeft) {
             if(currentPolygonIndex < polygons->count - 1) {
                 currentPolygonIndex++;
@@ -182,22 +185,25 @@ long int writeMapperArea(FILE* file, OsmId id, MapperPolygons* polygons, BBox bb
     return offset;
 }
 
-void initMapperWriter(MapperWriter* self, const char* outputDirectory) {
+void initMapperWriter(MapperWriter* self, const char* outputDirectory, char compress) {
     self->dbPath = strdup(outputDirectory);
     
     if(-1 == mkdir(outputDirectory, S_IRWXU) && errno != EEXIST) {  
         fprintf(stderr, "Error creating directory %s: %i\n", outputDirectory, errno);        
     }
-    
-    self->pointsFile = openFile("points", outputDirectory, "w+");
-    self->waysFile = openFile("ways", outputDirectory, "w+");
-    self->areasFile = openFile("areas", outputDirectory, "w+");	
+    self->compressed = compress;
+	self->write = getWrite(compress);
+	self->mapInformation.bounds.min.x = INT_MAX;
+	self->mapInformation.bounds.min.y = INT_MAX;
+    self->pointsFile = openFile("points", outputDirectory, "w+", compress);
+    self->waysFile = openFile("ways", outputDirectory, "w+", compress);
+    self->areasFile = openFile("areas", outputDirectory, "w+", compress);	
     //self->pointsIndexFile = openFile("points.idx", outputDirectory, "w+");
-    self->pointsLocationIndexFile = openFile("points.lidx", outputDirectory, "w+");
+    self->pointsLocationIndexFile = openFile("points.lidx", outputDirectory, "w+", compress);
     //self->waysIndexFile = openFile("ways.idx", outputDirectory, "w+");
-    self->waysLocationIndexFile = openFile("ways.lidx", outputDirectory, "w+");
+    self->waysLocationIndexFile = openFile("ways.lidx", outputDirectory, "w+", compress);
     //self->areasIndexFile = openFile("areas.idx", outputDirectory, "w+");
-    self->areasLocationIndexFile = openFile("areas.lidx", outputDirectory, "w+");
+    self->areasLocationIndexFile = openFile("areas.lidx", outputDirectory, "w+", compress);
     
     initSimpleStringIndex(&(self->attributesIndex));
     simpleStringIndexOf(&(self->attributesIndex), UTF8_CAST "UNUSED");
@@ -228,7 +234,7 @@ void updateBounds(BBox* result, Coordinate x, Coordinate y) {
 
 ZoomLevel getMinimalPointLevel(Node* node) {
     UTF8* placeType;
-    if(placeType = valueForKey(&(node->tags), UTF8_CAST "place")) {
+    if((placeType = valueForKey(&(node->tags), UTF8_CAST "place"))) {
         if(utf8equal(placeType, UTF8_CAST "city")) {
             return 5;
         }
@@ -244,7 +250,7 @@ ZoomLevel getMinimalPointLevel(Node* node) {
 
 ZoomLevel getMaximalPointLevel(Node* node) {
     UTF8* placeType;
-    if(placeType = valueForKey(&(node->tags), UTF8_CAST "place")) {
+    if((placeType = valueForKey(&(node->tags), UTF8_CAST "place"))) {
         if(utf8equal(placeType, UTF8_CAST "city")) {
             return 11;
         }
@@ -276,7 +282,7 @@ void writePoint(MapperWriter* self, UTF8* class, Node* node) {
     //printf("Update bounds\n");
     updateBounds(&(self->mapInformation.bounds), x, y);
     //printf("Write to file\n");
-    self->pointsOffset += writeMapperPoint(self->pointsFile, node->info.id, x, y, &(node->tags), simpleStringIndexOf(&(self->typesIndex), class), &(self->attributesIndex));
+    self->pointsOffset += writeMapperPoint(self->pointsFile, node->info.id, x, y, &(node->tags), simpleStringIndexOf(&(self->typesIndex), class), &(self->attributesIndex), self->write);
     //printf("Done.\n");
 }
 
@@ -308,7 +314,7 @@ void convertNodesInfoToMapperWayNodes(NodesInfo* infos, MapperWayNodes* nodes) {
 
 ZoomLevel getMinimalWayLevel(Way* way) {
     UTF8* highwayType;
-    if(highwayType = valueForKey(&(way->tags), UTF8_CAST "highway")) {
+    if((highwayType = valueForKey(&(way->tags), UTF8_CAST "highway"))) {
         if(utf8equal(highwayType, UTF8_CAST "trunk")) {
             return 4;
         }
@@ -385,7 +391,7 @@ void writeWay(MapperWriter* self, UTF8* class, OsmId groupId, Way* way) {
     //printf("Index...\n");
     addTree16Node(&(self->waysIndex), way->info.id, self->waysOffset);
     //printf("Write...\n");
-    self->waysOffset += writeMapperWay(self->waysFile, way->info.id, groupId, &wayNodes, wayBox, &(way->tags), simpleStringIndexOf(&(self->typesIndex), class), &(self->attributesIndex));
+    self->waysOffset += writeMapperWay(self->waysFile, way->info.id, groupId, &wayNodes, wayBox, &(way->tags), simpleStringIndexOf(&(self->typesIndex), class), &(self->attributesIndex), self->write);
 }
 
 ZoomLevel getMinimalAreaLevel(PlainTags* tags, MapperPolygons* polygons) {
@@ -428,61 +434,71 @@ void writeArea(MapperWriter* self, UTF8* class, OsmId id, PlainTags* tags, Mappe
     
     add4DObject(&(self->areasLocations), areaBox, self->areasOffset, minZoomLevel, maxZoomLevel);
     addTree16Node(&(self->areasIndex), id, self->areasOffset);
-    self->areasOffset += writeMapperArea(self->areasFile, id, polygons, areaBox, tags, simpleStringIndexOf(&(self->typesIndex), class), &(self->attributesIndex));
+    self->areasOffset += writeMapperArea(self->areasFile, id, polygons, areaBox, tags, simpleStringIndexOf(&(self->typesIndex), class), &(self->attributesIndex), self->write);
 }
 
 void writeMapInformation(MapperWriter* self, MapInformation* mapInformation) {
-    self->mapInformation.bounds = mapInformation->bounds;
-    self->mapInformation.id = mapInformation->id;
-    self->mapInformation.name = utf8dup(mapInformation->name);
-    self->mapInformation.nameLength = utf8size(mapInformation->name);
-    FILE* file = openFile("info", self->dbPath, "w+");
-    fwrite(&(self->mapInformation), sizeof(MapInformation) - sizeof(UTF8*), 1, file);
-    fwrite(self->mapInformation.name, sizeof(UTF8), self->mapInformation.nameLength, file);
-    fclose(file);
+	if(&(self->mapInformation) != mapInformation) {
+		self->mapInformation.bounds = mapInformation->bounds;
+		self->mapInformation.id = mapInformation->id;
+		self->mapInformation.name = utf8dup(mapInformation->name);
+		self->mapInformation.nameLength = utf8size(mapInformation->name);
+	}
+    FILE* file = openFile("map.info", self->dbPath, "w+", self->compressed);
+    self->write(file, &(self->mapInformation), sizeof(MapInformation) - sizeof(UTF8*));
+    self->write(file, self->mapInformation.name, sizeof(UTF8) * self->mapInformation.nameLength);
+	getClose(self->compressed)(file);
 }
 
 void closeMapperWriter(MapperWriter* self) {
     //printf("Write attributes index...\n");
-    FILE* attributesIndexFile = openFile("attributes", self->dbPath, "w+");
+    FILE* attributesIndexFile = openFile("attributes", self->dbPath, "w+", self->compressed);
     writeSimpleStringIndex(&(self->attributesIndex), attributesIndexFile);
-    fclose(attributesIndexFile);
+    getClose(self->compressed)(attributesIndexFile);
     //printf("Write types index...\n");
-    FILE* typesIndexFile = openFile("types", self->dbPath, "w+");
+    FILE* typesIndexFile = openFile("types", self->dbPath, "w+", self->compressed);
     writeSimpleStringIndex(&(self->typesIndex), typesIndexFile);
-    fclose(typesIndexFile);
-
+	getClose(self->compressed)(typesIndexFile);
+	
     //printf("Write points index...\n");
     //saveTree16ToFile(&(self->pointsIndex), self->pointsIndexFile, 0, 0);
     //printf("Create point location index...\n");
     Tree2D* pointsLocationTree = index2DObjects(&(self->pointsLocations));
     //printf("Write point location index...\n");
-    write2DTree(pointsLocationTree, self->pointsLocationIndexFile);
+    write2DTree(pointsLocationTree, self->pointsLocationIndexFile, self->write);
     free2DTree(pointsLocationTree);
-    
+	getClose(self->compressed)(self->pointsLocationIndexFile);
     //printf("Write ways index...\n");    
     //saveTree16ToFile(&(self->waysIndex), self->waysIndexFile, 0, 0);
     //printf("Create ways location index...\n");
     Tree4D* locationTree = index4DObjects(&(self->waysLocations));
     //printf("Write ways location index %i...\n", locationTree);
-    write4DTree(locationTree, self->waysLocationIndexFile);
+    write4DTree(locationTree, self->waysLocationIndexFile, self->write);
     free4DTree(locationTree);
+	getClose(self->compressed)(self->waysLocationIndexFile);
 
     //printf("Write areas index...\n");
     //saveTree16ToFile(&(self->areasIndex), self->areasIndexFile, 0, 0);
     //printf("Create areas location index...\n");    
     locationTree = index4DObjects(&(self->areasLocations));
     //printf("Write areas location index...\n");    
-    write4DTree(locationTree, self->areasLocationIndexFile);
+    write4DTree(locationTree, self->areasLocationIndexFile, self->write);
     free4DTree(locationTree);
-    //printf("Closed.\n");    
+	getClose(self->compressed)(self->areasLocationIndexFile);
+    //printf("Closed.\n");
+	
+	getClose(self->compressed)(self->waysFile);
+    getClose(self->compressed)(self->areasFile);
+    getClose(self->compressed)(self->pointsFile);
+	
+	writeMapInformation(self, &(self->mapInformation));
 }
 
 
-void initMapperConverter(MapperConverter* self, OsmDbReader* reader, const char* outputDirectory) {
+void initMapperConverter(MapperConverter* self, OsmDbReader* reader, const char* outputDirectory, char compress) {
     self->writer = calloc(sizeof(MapperWriter), 1);
     initMultipolygonRelations(&(self->multipolygons));
-    initMapperWriter(self->writer, outputDirectory);
+    initMapperWriter(self->writer, outputDirectory, compress);
     self->reader = reader;
 }
 
@@ -492,7 +508,7 @@ CollectionImplGeneric(PMultipolygonRelation, MultipolygonRelations, 100)
 void prepareIndicies(MapperConverter* self) {
     Relation* relation;
     printf("Preparing indicies...\n");
-    while(relation = nextRelation(self->reader)) {
+    while((relation = nextRelation(self->reader))) {
         if(utf8equal(valueForKey(&(relation->tags), UTF8_CAST "type"), UTF8_CAST "multipolygon")) {
             //printf("Relation %i: %s with %i members\n", relation->info.id, valueForKey(&(relation->tags), UTF8_CAST "type"), relation->relationMembers.count);
             MultipolygonRelation* multipolygon = malloc(sizeof(MultipolygonRelation));
@@ -555,7 +571,7 @@ void convertNodes(MapperConverter* self) {
     printf("Converting nodes...\n");
     int totalCount = 0;
     int pointsCount = 0;
-    while(node = nextNode(self->reader)) {
+    while((node = nextNode(self->reader))) {
         //printf("Converting node...\n");
         if(node->tags.count > 0) {
             //            printf("Determine class...\n");
@@ -581,12 +597,13 @@ UTF8* wayClassByTags(PlainTags* tags) {
         return UTF8_CAST "Highway";
     } else if (valueForKey(tags, UTF8_CAST"railway")) {
         return UTF8_CAST "Railway";
-    } else {
-        UTF8* waterway = valueForKey(tags, UTF8_CAST"waterway");
-        if (waterway && !utf8equal(waterway, UTF8_CAST"riverbank")) {
-            return UTF8_CAST "Waterway";
-        } 
-    }  
+    } 
+	
+	UTF8* waterway = valueForKey(tags, UTF8_CAST"waterway");
+    if (waterway && !utf8equal(waterway, UTF8_CAST"riverbank")) {
+		return UTF8_CAST "Waterway";
+    }
+        
     return NULL;
 }
 
@@ -605,7 +622,9 @@ UTF8* areaClassByTags(PlainTags* tags) {
         return UTF8_CAST "Natural";
     } else if(valueForKey(tags, UTF8_CAST "power")) {
         return UTF8_CAST "PowerArea";
-    } else if(tags->count > 0) {
+    } else if(utf8equal(valueForKey(tags, UTF8_CAST "amenity"), UTF8_CAST "parking")) {
+		return UTF8_CAST "Parking";
+	} else if(tags->count > 0) {
         return UTF8_CAST "Area";
     }
     return NULL;
@@ -617,7 +636,7 @@ void convertWays(MapperConverter* self) {
     int totalCount = 0;
     int waysCount = 0;
     int areasCount = 0;
-    while (way = nextWay(self->reader)) {
+    while ((way = nextWay(self->reader))) {
         if(way->tags.count > 0 && way->wayNodes.count > 0) {
             //printf("Converting way %i with tags && nodes\n", way->info.id);
             int cycled = way->wayNodes.count >= 3 && way->wayNodes.values[0].id == way->wayNodes.values[way->wayNodes.count-1].id;
@@ -762,16 +781,16 @@ void convertToMapper(MapperConverter* self) {
 void initMapperReader(MapperReader* self, const char* mapDirectory) {
     self->dbPath = strdup(mapDirectory);
         
-    self->pointsFile = openFile("points", mapDirectory, "r+");
-    self->waysFile = openFile("ways", mapDirectory, "r+");
-    self->areasFile = openFile("areas", mapDirectory, "r+");	
-    self->pointsLocationIndexFile = openFile("points.lidx", mapDirectory, "r+");
-    self->waysLocationIndexFile = openFile("ways.lidx", mapDirectory, "r+");
-    self->areasLocationIndexFile = openFile("areas.lidx", mapDirectory, "r+");
-    FILE* attributesIndexFile = openFile("attributes", mapDirectory, "r+");
+    self->pointsFile = openFile("points", mapDirectory, "r+", AUTO_COMPRESS);
+    self->waysFile = openFile("ways", mapDirectory, "r+", AUTO_COMPRESS);
+    self->areasFile = openFile("areas", mapDirectory, "r+", AUTO_COMPRESS);
+    self->pointsLocationIndexFile = openFile("points.lidx", mapDirectory, "r+", AUTO_COMPRESS);
+    self->waysLocationIndexFile = openFile("ways.lidx", mapDirectory, "r+", AUTO_COMPRESS);
+    self->areasLocationIndexFile = openFile("areas.lidx", mapDirectory, "r+", AUTO_COMPRESS);
+    FILE* attributesIndexFile = openFile("attributes", mapDirectory, "r+", AUTO_COMPRESS);
     initSimpleStringIndexFromFile(&(self->attributesIndex), attributesIndexFile);
     fclose(attributesIndexFile);
-    FILE* typesIndexFile = openFile("types", mapDirectory, "r+");
+    FILE* typesIndexFile = openFile("types", mapDirectory, "r+", AUTO_COMPRESS);
     initSimpleStringIndexFromFile(&(self->typesIndex), attributesIndexFile);    
     fclose(typesIndexFile);
     //TODO read map information

@@ -24,7 +24,10 @@ typedef struct {
 
 typedef struct {
     OsmId id;
-    AreaPartRole role;
+	struct {
+		AreaPartRole role: 2;
+		char nodesCount: 6;
+	}; 
 } MapperPolygonInfo;
 
 typedef struct {
