@@ -5,8 +5,8 @@ LIB_SRCS_DIST = 2DTree.c MapperArea.c MapperTypes.c mapper.c omm.c osm.c 4DTree.
 SRCS = $(LIB_SRCS) osmc.c
 HEADERS = $(LIB_SRCS, .c=.h)
 
-CFLAGS = `xml2-config --cflags` -I/usr/include/mysql -I/usr/local/mysql/include/ -I/usr/include/ -I/usr/local/include -I./ -fms-extensions
-LDFLAGS = `xml2-config --libs` -L/usr/lib -L/usr/local/lib -L/usr/local/mysql/lib/ -largtable2 -lcurl -lsqlite3 -lmysqlclient
+CFLAGS = `xml2-config --cflags` `pkg-config --cflags mysqlclient`  `pkg-config --cflags argtable2` `pkg-config --cflags libcurl` `pkg-config --cflags sqlite3` -I./ -fms-extensions
+LDFLAGS = `xml2-config --libs` `pkg-config --libs mysqlclient` `pkg-config --libs argtable2` `pkg-config --libs libcurl` `pkg-config --libs sqlite3`
 
 osmc: $(SRCS) $(HEADERS)
 		$(CC) $(CFLAGS) $(LDFLAGS) -std=c99 -o osmc $(SRCS)
