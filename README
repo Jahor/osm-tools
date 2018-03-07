@@ -1,0 +1,72 @@
+Usage: ./osmc s2l [-i <input>] [-p <input>] -o <output>
+       ./osmc [-m] d2l -i <input> [-p <input>] [-c <input>]...
+       ./osmc s2m [-i <input>] [-p <input>] -h <input> -u <input> [-w <input>] [-d <input>]
+       ./osmc [-m] d2m -h <input> -u <input> [-w <input>] [-d <input>] [-p <input>] [-c <input>]...
+       ./osmc [-c] s2b [-i <input>] [-p <input>] -o <output>
+       ./osmc [-mc] b2m -i <input> -o <output>
+       ./osmc [-c] l2m -i <input> -o <output>
+       ./osmc [-c] m2m -h <input> -u <input> [-w <input>] -d <input> -o <output>
+       ./osmc test utf|reader|curl
+       ./osmc [-h]
+       ./osmc update init|run|timestamp -i <input> [-p <input>]
+       ./osmc updateMysql init|run|timestamp -h <input> -u <input> [-w <input>] -d <input> [-p <input>]
+This program converts Openstreet map between different format
+      s2l                       Convert from OpenStreetMap xml file format to sqlite DB.
+      -i, --input=<input>       Path to input xml file. If not present stdin will be used.
+      -p, --polygons=<input>    Path to directory with polygons files to cut regions.
+      -o, --output=<output>     Path to directory with converted files for each polygon.
+      d2l                       Updates sqlite DB with diff.
+      -i, --input=<input>       Path to sqlite DB.
+      -p, --polygon=<input>     Path to file with polygon to cut diffs.
+      -c, --change=<input>      Path to directory with converted files for each polygon. Or converted file if polygons is not specified.
+      -m, --in-memory-cache     If to read all ids in memory.
+      s2m                       Convert from OpenStreetMap xml file format to mysql DB.
+      -i, --input=<input>       Path to input xml file. If not present stdin will be used.
+      -p, --polygons=<input>    Path to directory with polygons files to cut regions.
+      -h, --host=<input>        Host of Mysql server.
+      -u, --user=<input>        User on mysql server.
+      -w, --password=<input>    Password on mysql server.
+      -d, --database=<input>    DB name.
+      d2m                       Updates mysql DB with diff.
+      -h, --host=<input>        Host of Mysql server.
+      -u, --user=<input>        User on mysql server.
+      -w, --password=<input>    Password on mysql server.
+      -d, --database=<input>    DB name.
+      -p, --polygon=<input>     Path to file with polygon to cut diffs.
+      -c, --change=<input>      Path to directory with converted files for each polygon. Or converted file if polygons is not specified.
+      -m, --in-memory-cache     If to read all ids in memory.
+      s2b                       Convert from OpenStreetMap xml file format to binary format.
+      -i, --input=<input>       Path to input xml file. If not present stdin will be used.
+      -p, --polygons=<input>    Path to directory with polygons files to cut regions.
+      -o, --output=<output>     Path to directory with directories with converted files for each polygon. Or directory with converted files if polygons is not specified.
+      -c, --compress            If to compress resulting files.
+      b2m                       Convert from binary map to mapper format.
+      -i, --input=<input>       Path to directory with binary map.
+      -m, --memory-nodes        If to read all nodes in memory.
+      -c, --compress            If to compress resulting files.
+      -o, --output=<output>     Path to directory with converted files.
+      l2m                       Convert from sqlite map to mapper format.
+      -i, --input=<input>       Path to file with sqlite map.
+      -o, --output=<output>     Path to directory with converted files.
+      -c, --compress            If to compress resulting files.
+      m2m                       Convert from mysql map to mapper format.
+      -h, --host=<input>        Host of Mysql server.
+      -u, --user=<input>        User on mysql server.
+      -w, --password=<input>    Password on mysql server.
+      -d, --database=<input>    DB name.
+      -o, --output=<output>     Path to directory with converted files.
+      -c, --compress            If to compress resulting files.
+      test                      Run tests.
+      utf|reader|curl           What to test.
+      -h, --help                print this help and exit
+      update                    Run update.
+      init|run|timestamp        What to do.
+      -i, --input=<input>       Path to db file.
+      -p, --polygon=<input>     Path to polygon file.
+      updateMysql               Run update.
+      init|run|timestamp        What to do.
+      -h, --host=<input>        Host of Mysql server.
+      -u, --user=<input>        User on mysql server.
+      -w, --password=<input>    Password on mysql server.
+      -d, --database=<input>    DB name.
+      -p, --polygon=<input>     Path to polygon file.

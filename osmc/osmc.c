@@ -161,7 +161,7 @@ static char* nextChangeFileName(OsmTimestamp* timestamp, const char* timePeriod)
     strftime(timeEndString, 14, format, &endTime);
     
     char* result = calloc(sizeof(char), 41+12*2+strlen(timePeriod));
-    sprintf(result, "http://planet.openstreetmap.org/%s/%s-%s.osc.gz", timePeriod, timeStartString, timeEndString);
+    sprintf(result, "https://planet.openstreetmap.org/%s/%s-%s.osc.gz", timePeriod, timeStartString, timeEndString);
     return result;
 }
 
